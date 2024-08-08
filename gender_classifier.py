@@ -15,8 +15,8 @@ class GenderDataset(Dataset):
     self.transform = transform
     self.men_dir = os.path.join(root_dir, 'MEN')
     self.women_dir = os.path.join(root_dir, 'WOMAN')
-    self.men_images = [os.path.join(self.men_dir, img) for img in os.listdir(self.men_dir)]
-    self.women_images = [os.path.join(self.women_dir, img) for img in os.listdir(self.women_dir)]
+    self.men_images = [os.path.join(self.men_dir, img) for img in os.listdir(self.men_dir) if os.path.isfile(os.path.join(self.men_dir, img)) and img.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    self.women_images = [os.path.join(self.women_dir, img) for img in os.listdir(self.women_dir) if os.path.isfile(os.path.join(self.women_dir, img)) and img.lower().endswith(('.png', '.jpg', '.jpeg'))]
     self.all_images = self.men_images + self.women_images
     self.labels = [[1, 0]] * len(self.men_images) + [[0, 1]] * len(self.women_images)
 
@@ -62,14 +62,18 @@ class GenderClassifier(nn.Module):
         conv_block(1024, 512, stride = 2)
       )
     self.avgpool = nn.AdaptiveAvgPool2d((1,1))
-    self.fc = nn.Linear(512, 2)
+    self.fc1 = nn.Linear(512, 2048)
+    self.fc2 = nn.Linear(2048, 2)
+    self.relu = nn.ReLU()
     self.softmax = nn.Softmax(dim = 1)
   
   def forward(self, x):
     x = self.backbone(x)
     x = self.avgpool(x)
     x = torch.flatten(x, 1)
-    x = self.fc(x)
+    x = self.fc1(x)
+    x = self.relu(x)
+    x = self.fc2(x)
     x = self.softmax(x)
     return x
 
@@ -99,6 +103,7 @@ best_accuracy = 0
 patience = 0
 for epoch in range(num_epochs):
   model.train()
+  running_loss = 0
   for i, (images, labels) in enumerate(trainloader):
     images, labels = images.to(device), labels.to(device)
     optimizer.zero_grad()
@@ -106,10 +111,10 @@ for epoch in range(num_epochs):
     loss = criterion(outputs, labels)
     loss.backward()
     optimizer.step()
-
+    running_loss += loss.item()
     if i % 10 == 0:
       print(f'Epoch: {epoch}, Iteration: {i}, Loss: {loss.item()}')
-  wandb.log({'Train loss': loss.item()})
+  wandb.log({'Train loss': running_loss / len(trainloader)})
 
   model.eval()
   with torch.no_grad():
